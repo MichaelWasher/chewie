@@ -198,3 +198,6 @@ class MessageAuthenticator(Attribute):
     TYPE = 80
     DATA_TYPE = String
     DESCRIPTION = "Message-Authenticator"
+
+
+# TODO Add Attributes for Accounting Packets

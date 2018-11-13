@@ -117,6 +117,28 @@ class RadiusPacket(Radius):
                 self.packed[i+position] = message_authenticator[i]
         return self.packed
 
+    #TODO Rename and implement override in child message types for RADIUS
+    def build_acct(self, secret=None):
+        """Only call this once, or else the MessageAuthenticator will not be zeros,
+         resulting in the wrong hash
+         Args:
+             secret (str): Shared sceret between chewie and RADIUS server.
+        Returns:
+            packed packet (bytes)"""
+        if not self.packed:
+            self.pack()
+
+        position = 1 + 1 + 2
+
+        if secret:
+            request_authenticator = bytearray(hashlib.md5(self.packed + secret.encode()).digest())
+
+            for i in range(16):
+                self.packed[i+position] = request_authenticator[i]
+
+        return self.packed
+
+
     def validate_packet(self, secret, request_authenticator=None):
         """Calculates the Response Authenticator (in Radius Header) and
         MessageAuthenticator (a Radius Attribute) hashes and compares with what was provided.
@@ -186,6 +208,16 @@ class RadiusAccessReject(RadiusPacket):
 @register_packet_type_parser
 class RadiusAccessChallenge(RadiusPacket):
     CODE = Radius.ACCESS_CHALLENGE
+
+
+@register_packet_type_parser
+class RadiusAccountingRequest(RadiusPacket):
+    CODE = Radius.ACCOUNTING_REQUEST
+
+
+@register_packet_type_parser
+class RadiusAccountingResponse(RadiusPacket):
+    CODE = Radius.ACCOUNTING_RESPONSE
 
 
 class RadiusAttributesList:

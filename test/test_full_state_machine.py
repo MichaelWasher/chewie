@@ -20,6 +20,9 @@ from chewie.utils import get_logger
 from helpers import FakeTimerScheduler
 
 
+# Todo add test for Success3 / Logoff3 / Idle 3
+
+
 def check_counters(_func=None, *,
                    expected_auth_counter=0, expected_failure_counter=0, expected_logoff_counter=0):
     """Decorator to check the handlers have been called the
@@ -280,6 +283,7 @@ class FullStateMachineStartTestCase(unittest.TestCase):
         self.assertEqual(self.radius_output_queue.qsize(), 0)
 
         self.test_success2()
+
 
     @check_counters
     def test_logoff_from_idle2(self):

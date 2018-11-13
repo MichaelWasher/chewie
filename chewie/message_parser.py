@@ -1,7 +1,6 @@
-
 # pylint: disable=too-few-public-methods
 
-from chewie.radius import RadiusAttributesList, RadiusAccessRequest, Radius
+from chewie.radius import RadiusAttributesList, RadiusAccessRequest, RadiusAccountingRequest, Radius
 from chewie.radius_attributes import CallingStationId, UserName, MessageAuthenticator, EAPMessage, \
     NASPort
 from chewie.ethernet_packet import EthernetPacket
@@ -20,14 +19,12 @@ class EapMessage:
 
 
 class SuccessMessage(EapMessage):
-
     @classmethod
     def build(cls, src_mac, eap):
         return cls(src_mac, eap.packet_id)
 
 
 class FailureMessage(EapMessage):
-
     @classmethod
     def build(cls, src_mac, eap):
         return cls(src_mac, eap.packet_id)
@@ -69,6 +66,7 @@ class Md5ChallengeMessage(EapMessage):
 
 class TlsMessageBase(EapMessage):
     """TLS and TTLS will extend this class, but TTLS cannot be same type as TLS"""
+
     def __init__(self, src_mac, message_id, code, flags, extra_data):
         super().__init__(src_mac, message_id)
         self.code = code
@@ -113,7 +111,6 @@ EAP_MESSAGES = {
     Eap.TLS: TlsMessage,
     Eap.TTLS: TtlsMessage,
 }
-
 
 AUTH_8021X_MESSAGES = {
     0: "eap",
@@ -202,12 +199,17 @@ class MessagePacker:
         if not extra_attributes:
             extra_attributes = []
 
+        # IF Special Accounting Request then send on
+        if state and state.DATA_TYPE.DATA_TYPE_VALUE == Radius.ACCOUNTING_REQUEST:
+            return MessagePacker.radius_pack_accounting(src_mac, username, radius_packet_id,
+                                                        request_authenticator, secret, nas_port, extra_attributes)
+
         attr_list = []
         attr_list.append(UserName.create(username))
         attr_list.append(CallingStationId.create(str(src_mac)))
 
         if nas_port:
-            attr_list.append(NASPort.create( nas_port))
+            attr_list.append(NASPort.create(nas_port))
 
         attr_list.extend(extra_attributes)
 
@@ -220,8 +222,41 @@ class MessagePacker:
             bytes.fromhex("00000000000000000000000000000000")))
 
         attributes = RadiusAttributesList(attr_list)
-        access_request = RadiusAccessRequest(radius_packet_id, request_authenticator, attributes)
-        return access_request.build(secret)
+
+        request_packet = RadiusAccessRequest(radius_packet_id, request_authenticator, attributes)
+        return request_packet.build(secret)
+
+    def radius_pack_accounting(src_mac, username, radius_packet_id,
+                               request_authenticator, secret, nas_port=None, extra_attributes=None):
+        """
+        Packs up a RADIUS message to send to a RADIUS Server.
+        Args:
+            eap_message (Message): e.g. IdentityMessage
+            src_mac (MacAddress): supplicants mac address
+            username (str): supplicants username
+            radius_packet_id (int):
+            request_authenticator (bytes):
+            state (State): RADIUS State
+            secret (str): RADIUS secret used between Chewie and RADIUS Server
+            extra_attributes (list): list of extra RADIUS attributes to send along with the above.
+
+        Returns:
+            packed RADIUS packet (bytes)
+        """
+        attr_list = []
+        attr_list.append(UserName.create(username))
+        attr_list.append(CallingStationId.create(str(src_mac)))
+
+        if nas_port:
+            attr_list.append(NASPort.create(nas_port))
+
+        attr_list.extend(extra_attributes)
+
+        attributes = RadiusAttributesList(attr_list)
+
+        request_packet = RadiusAccountingRequest(radius_packet_id, bytes.fromhex("00000000000000000000000000000000"),
+                                                 attributes)
+        return request_packet.build_acct(secret)
 
     @staticmethod
     def eap_pack(message):

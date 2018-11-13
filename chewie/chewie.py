@@ -16,6 +16,7 @@ from chewie.message_parser import MessageParser, MessagePacker
 from chewie.mac_address import MacAddress
 from chewie.event import EventMessageReceived, EventRadiusMessageReceived, EventPortStatusChange
 from chewie.utils import get_logger
+from chewie.radius import Radius
 
 def unpack_byte_string(byte_string):
     """unpacks a byte string"""
@@ -30,12 +31,13 @@ def port_id_to_int(port_id):
 
 class Chewie:
     """Facilitates EAP supplicant and RADIUS server communication"""
-    RADIUS_UDP_PORT = 1812
+    RADIUS_AUTH_UDP_PORT = 1812
+    RADIUS_ACCT_UDP_PORT = 1813
 
     def __init__(self, interface_name, logger=None,
                  auth_handler=None, failure_handler=None, logoff_handler=None,
-                 radius_server_ip=None, radius_server_port=None, radius_server_secret=None,
-                 chewie_id=None):
+                 radius_server_ip=None, radius_auth_server_port=None, radius_acct_server_port=None,
+                 radius_server_secret=None, chewie_id=None):
         self.interface_name = interface_name
         self.logger = get_logger(logger.name + "." + Chewie.__name__)
         self.auth_handler = auth_handler
@@ -44,9 +46,13 @@ class Chewie:
 
         self.radius_server_ip = radius_server_ip
         self.radius_secret = radius_server_secret
-        self.radius_server_port = self.RADIUS_UDP_PORT
-        if radius_server_port:
-            self.radius_server_port = radius_server_port
+        self.radius_auth_server_port = self.RADIUS_AUTH_UDP_PORT
+        self.radius_acct_server_port = self.RADIUS_ACCT_UDP_PORT
+        if radius_auth_server_port:
+            self.radius_auth_server_port = radius_auth_server_port
+        if radius_acct_server_port:
+            self.radius_acct_server_port = radius_acct_server_port
+
         self.radius_listen_ip = "0.0.0.0"
         self.radius_listen_port = 0
 
@@ -162,7 +168,8 @@ class Chewie:
         self.radius_socket = RadiusSocket(self.radius_listen_ip,
                                           self.radius_listen_port,
                                           self.radius_server_ip,
-                                          self.radius_server_port)
+                                          self.radius_auth_server_port,
+                                          self.radius_acct_server_port)
         self.radius_socket.setup()
         self.logger.info("Radius Listening on %s:%d" % (self.radius_listen_ip,
                                                         self.radius_listen_port))
@@ -220,7 +227,14 @@ class Chewie:
                                                  self.radius_secret,
                                                  port_id_to_int(port_id),
                                                  self.extra_radius_request_attributes)
-                self.radius_socket.send(data)
+
+                # Need to know here if it's going to accounting
+                # TODO Replace this with inheritance in next iteration
+                if state and state.DATA_TYPE.DATA_TYPE_VALUE is Radius.ACCOUNTING_REQUEST:
+                    self.radius_socket.send_acct(data)
+                else:
+                    self.radius_socket.send(data)
+
                 self.logger.info("sent radius message.")
             except Exception as e:
                 self.logger.exception(e)
@@ -235,10 +249,14 @@ class Chewie:
                 radius = MessageParser.radius_parse(packed_message, self.radius_secret,
                                                     self.request_authenticator_callback)
                 self.logger.info("Received RADIUS message: %s", radius)
-                eap_msg_attribute = radius.attributes.find(EAPMessage.DESCRIPTION)
                 state_machine = self.get_state_machine_from_radius_packet_id(radius.packet_id)
-                eap_msg = eap_msg_attribute.data_type.data()
                 state = radius.attributes.find(State.DESCRIPTION)
+                eap_msg_attribute = radius.attributes.find(EAPMessage.DESCRIPTION)
+
+                # Cannot assume that this contains an EAP (Accounting)
+                if eap_msg_attribute:
+                    eap_msg = eap_msg_attribute.data_type.data()
+
                 self.logger.info("radius EAP: %s", eap_msg)
                 event = EventRadiusMessageReceived(eap_msg, state, radius.attributes.to_dict())
                 state_machine.event(event)

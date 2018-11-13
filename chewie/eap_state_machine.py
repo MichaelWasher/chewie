@@ -6,7 +6,8 @@ from chewie.event import EventMessageReceived, EventRadiusMessageReceived, Event
     EventPortStatusChange, EventSessionTimeout
 from chewie.message_parser import SuccessMessage, FailureMessage, EapolStartMessage, \
     IdentityMessage, EapolLogoffMessage
-from chewie.radius_attributes import SessionTimeout
+from chewie.radius_attributes import SessionTimeout, State
+from chewie.radius import Radius
 from chewie.utils import get_logger, log_method
 
 
@@ -98,6 +99,8 @@ class FullEAPStateMachine:
     """Based on RFC 4137 section 7 (EAP Full Authenticator).
     Only acts in passthrough mode (no local method support).
     """
+    # Main Switch for activating Accounting
+    accounting_active = True    # bool
 
     # non RFC 4137 variables/CONSTANTs
     DEFAULT_TIMEOUT = 5  # Number of Seconds
@@ -145,6 +148,14 @@ class FullEAPStateMachine:
     FAILURE2 = "FAILURE2"
     TIMEOUT_FAILURE2 = "TIMEOUT_FAILURE2"
 
+    # Radius Accounting States
+    # TODO Place these variables in appropriate places according to convention
+    RADIUS_ACCOUNTING_REQUEST = "RADIUS_ACCOUNTING_REQUEST"
+    RADIUS_ACCOUNTING_RESPONSE = "RADIUS_ACCOUNTING_RESPONSE"
+    AAA_IDLE2 = "AAA_IDLE2"
+    SUCCESS3 = "SUCCESS3"
+    LOGOFF3 = "LOGOFF3"
+
     # Non RFC 4137 state, when logoff message received sm goes here.
     LOGOFF = "LOGOFF"
     LOGOFF2 = "LOGOFF2"
@@ -161,6 +172,11 @@ class FullEAPStateMachine:
     aaaEapKeyData = None    # EAP Key
     aaaEapKeyAvailable = None   # bool
     aaaMethodTimeout = None     # integer or NONE
+
+    # Radius Accounting Variables
+    # TODO Place these variables in appropriate places according to convention
+    aaaAcctResp = None
+    aaaAcctReq = None
 
     # Variables (Full Authenticator to AAA Interface)
     aaaEapResp = None       # bool
@@ -409,8 +425,20 @@ class FullEAPStateMachine:
         self.aaaFail = False  # pylint: disable=invalid-name
         self.aaaSuccess = False  # pylint: disable=invalid-name
         self.aaaEapReq = False  # pylint: disable=invalid-name
+        self.aaaAcctReq = False
         self.aaaEapNoReq = False  # pylint: disable=invalid-name
+        self.aaaAcctResp = False
         self.aaaEapResp = True
+
+    @log_method
+    def aaa_idle2_state(self):
+        self.aaaFail = False  # pylint: disable=invalid-name
+        self.aaaSuccess = False  # pylint: disable=invalid-name
+        self.aaaEapReq = False  # pylint: disable=invalid-name
+        self.aaaAcctReq = False
+        self.aaaEapNoReq = False  # pylint: disable=invalid-name
+        self.aaaEapResp = False
+        self.aaaAcctResp = True
 
     @log_method
     def aaa_response_state(self):
@@ -464,6 +492,21 @@ class FullEAPStateMachine:
     def logoff2_state(self):
         self.eapSuccess = False
         self.eapLogoff = True
+
+    @log_method
+    def logoff3_state(self):
+        self.eapSuccess = False
+        self.eapLogoff = True
+
+    @log_method
+    def radius_accounting_request_state(self):
+        #TODO Do something
+        pass
+
+    @log_method
+    def radius_accounting_response_state(self):
+        # TODO Do something
+        pass
 
     def handle_message_received(self):
         """Main state machine loop"""
@@ -532,6 +575,25 @@ class FullEAPStateMachine:
                 if self.logoff:
                     self.logoff_state()
                     self.currentState = FullEAPStateMachine.LOGOFF
+
+            if self.currentState == FullEAPStateMachine.RADIUS_ACCOUNTING_REQUEST:
+                self.logger.info('radius accounting state hit')
+                self.aaa_idle2_state()
+                self.currentState = FullEAPStateMachine.AAA_IDLE2
+
+            if self.currentState == FullEAPStateMachine.RADIUS_ACCOUNTING_RESPONSE:
+                # decide on the returned value
+                self.logger.info('radius accounting success')
+                self.currentState = FullEAPStateMachine.SUCCESS3
+
+            if self.currentState == FullEAPStateMachine.SUCCESS3:
+                # RFC 4137 says do nothing from success(2), but we're adding a logoff state.
+                # hopefully it will work as intended.
+                # Otherwise allow transition to logoff from all states.
+                # not tested
+                if self.logoff:
+                    self.logoff3_state()
+                    self.currentState = FullEAPStateMachine.LOGOFF3
 
             if self.currentState == FullEAPStateMachine.TIMEOUT_FAILURE:
                 # Do nothing.
@@ -636,6 +698,12 @@ class FullEAPStateMachine:
                     self.discard2_state()
                     self.currentState = FullEAPStateMachine.DISCARD2
 
+            if self.currentState == FullEAPStateMachine.AAA_IDLE2:
+                # timer out incase of nonresponse
+                if self.aaaAcctReq:
+                    self.radius_accounting_response_state()
+                    self.currentState = FullEAPStateMachine.RADIUS_ACCOUNTING_RESPONSE
+
             if self.currentState == FullEAPStateMachine.AAA_RESPONSE:
                 self.send_request2_state()
                 self.currentState = FullEAPStateMachine.SEND_REQUEST2
@@ -684,9 +752,15 @@ class FullEAPStateMachine:
                 # RFC 4137 says do nothing from success(2), but we're adding a logoff state.
                 # hopefully it will work as intended.
                 # Otherwise allow transition to logoff from all states.
+                # Add Accounting
+                if self.accounting_active is True:
+                    self.radius_accounting_request_state()
+                    self.currentState = FullEAPStateMachine.RADIUS_ACCOUNTING_REQUEST
+
                 if self.logoff:
                     self.logoff2_state()
                     self.currentState = FullEAPStateMachine.LOGOFF2
+
 
             if self.currentState == FullEAPStateMachine.TIMEOUT_FAILURE2:
                 # Do nothing.
@@ -742,7 +816,21 @@ class FullEAPStateMachine:
                 self.logger.error('cant find code --- %s', self.eapReqData)
             self.eapReq = False
 
-        if self.aaaEapResp and self.aaaEapRespData:
+        if self.aaaAcctResp:
+            self.logger.info('outputting accounting radius')
+            self.radius_state_attribute = State(State.DATA_TYPE)
+            self.radius_state_attribute.DATA_TYPE.DATA_TYPE_VALUE = Radius.ACCOUNTING_REQUEST
+
+            self.radius_output_messages.put((self.aaaEapRespData, self.src_mac,
+                                             self.aaaIdentity.identity,
+                                             self.radius_state_attribute,
+                                             self.port_id_mac))
+            self.sent_count += 1
+            self.set_timer()
+
+            self.aaaAcctResp = False
+
+        elif self.aaaEapResp and self.aaaEapRespData:
             if self.aaaEapRespData.code == Eap.RESPONSE:
                 self.logger.info('outputing radius')
                 self.radius_output_messages.put((self.aaaEapRespData, self.src_mac,
@@ -806,6 +894,7 @@ class FullEAPStateMachine:
             True if this event is being ignored and no further processing is required.
             Otherwise False.
         """
+        #TODO Add Timer for Accounting Request
         self.logger.info("Expired Timer Event Received")
         if self.sent_count == event.sent_count:
             self.logger.debug("processing timer event. haven't received a reply. %s %s",
@@ -847,13 +936,22 @@ class FullEAPStateMachine:
         self.radius_state_attribute = event.state
         self.aaaEapReq = True
         self.aaaEapReqData = event.message  # pylint: disable=invalid-name
+
         self.logger.info('sm ev.msg: %s', self.aaaEapReqData)
+
         if isinstance(self.aaaEapReqData, SuccessMessage):
             self.logger.info("aaaSuccess")
             self.aaaSuccess = True
-        if isinstance(self.aaaEapReqData, FailureMessage):
+        elif isinstance(self.aaaEapReqData, FailureMessage):
             self.logger.info("aaaFail")
             self.aaaFail = True
+        # Check for Accounting
+        elif self.radius_state_attribute and \
+                self.radius_state_attribute.DATA_TYPE.DATA_TYPE_VALUE == Radius.ACCOUNTING_RESPONSE:
+            # TODO Set up a timer for sending intermittent about the Accounting data
+            self.logger.info("aaaAccountingResponse")
+            self.aaaAcctReq = True
+
         self.logger.info('radius event %s', event.__dict__)
         self.set_vars_from_radius(event.attributes)
 
