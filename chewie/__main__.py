@@ -5,6 +5,7 @@ from os import path
 
 from chewie.chewie import Chewie
 from chewie.config_parser import parse_chewie_config
+from chewie.faucet_api import FaucetEventController
 
 def get_logger(name, log_level=logging.DEBUG):
     logger = logging.getLogger(name)
@@ -80,9 +81,9 @@ def main():
     if check_configuration_file_present(args):
         config_file = args.configuration_file
         config = parse_chewie_config(config_file, LOGNAME)
-
         chewie = Chewie(config['dp_interface'], logger, auth_handler, failure_handler, logoff_handler,
                         radius_server_ip=config['radius_ip'], radius_server_secret=config['radius_secret'])
+        FaucetEventController(chewie)
     else:
         chewie = Chewie(args.interface, logger, auth_handler, failure_handler, logoff_handler,
                         radius_server_ip=args.radius_ip, radius_server_secret=args.radius_secret)

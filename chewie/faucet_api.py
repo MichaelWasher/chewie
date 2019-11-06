@@ -6,11 +6,12 @@ import faucet_event_client
 
 LOGGER = logging.getLogger('runner')
 
-
-class faucet_api:
+class FaucetEventController:
     """"""
-    def __init__(self):
+    # TODO -  remove chewie dependency and replace with an observer pattern
+    def __init__(self, chewie):
         self.faucet_events = None
+        self.chewie = chewie
 
     def _flush_faucet_events(self):
         LOGGER.info('Flushing faucet event queue...')
@@ -41,12 +42,14 @@ class faucet_api:
             else:
                 LOGGER.debug('Other Event Occurred: %s', str(event.__dict__))
 
+    def _port_up(self, port_id):
+        self.chewie.port_up(port_id)
+
     def _handle_port_state(self, dpid, port, active):
-        #TODO implement port state management
-        # PORT STATE CHANGE
         LOGGER.debug('Port status event occured')
-        # CALL TO CHEWIE
-        pass
+
+        #TODO implement check for port up and down
+        self.port_up(port)
 
     def shutdown(self):
         """Shutdown this runner by closing all active components"""
