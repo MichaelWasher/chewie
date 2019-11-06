@@ -2,7 +2,7 @@
 from eventlet import sleep, GreenPool
 from eventlet.queue import Queue
 
-from chewie import timer_scheduler
+from chewie.timer_scheduler import TimerScheduler
 from chewie.nfv_sockets import EapSocket, MabSocket
 from chewie.ethernet_packet import EthernetPacket
 from chewie.event import EventMessageReceived, EventPreemptiveEAPResponseMessageReceived
@@ -57,7 +57,7 @@ class Chewie:
         self.radius_output_messages = Queue()
 
         self.radius_lifecycle = RadiusLifecycle(self.radius_secret, self.chewie_id, self.logger)
-        self.timer_scheduler = timer_scheduler.TimerScheduler(self.logger)
+        self.timer_scheduler = TimerScheduler(self.logger)
 
         self._eap_socket = None
         self._mab_socket = None

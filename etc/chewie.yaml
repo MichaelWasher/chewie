@@ -1,0 +1,5 @@
+radius_ip: 10.0.0.1
+radius_port: 1002
+radius_secret: 'secret'
+dp_interface: 'eth0'
+radius_interface: 'eth1'
