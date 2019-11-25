@@ -723,6 +723,7 @@ class FullEAPStateMachine(AbstractStateMachine):
 
         last_state = None
         while self.state != last_state:
+            self.logger.info("Current State Machine Object: %s ---> %s", hash(self.state))
             self.logger.info("Current State Transition: %s ---> %s", last_state, self.state)
             last_state = self.state
             self.process()  # pylint: disable=no-member # pytype: disable=attribute-error
