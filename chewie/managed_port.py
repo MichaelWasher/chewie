@@ -20,7 +20,7 @@ class ManagedPort:
         self.radius_output_messages = radius_output_messages
 
         self.state_machines = {}  # mac : state_machine
-        self.current_preemtive_eapol_id = None
+        self.current_preemptive_eapol_id = None
         self.port_status = False  # port_id: status (true=up, false=down)
         self.identity_job = None  # timerJob
         self.session_job = None   # timerJob
@@ -63,7 +63,7 @@ class ManagedPort:
         if self.identity_job:
             self.identity_job.cancel()
 
-        self.current_preemtive_eapol_id = None
+        self.current_preemptive_eapol_id = None
 
     def start_identity_requests(self):
         """Start Sending Preemptive Identity Requests"""
@@ -97,7 +97,7 @@ class ManagedPort:
 
         """
         _id = get_random_id()
-        self.current_preemtive_eapol_id = _id
+        self.current_preemptive_eapol_id = _id
         data = IdentityMessage(self.PAE_GROUP_ADDRESS, _id, Eap.REQUEST, "")
         self.supplicant_output_messages.put_nowait(
             EapQueueMessage(data, self.PAE_GROUP_ADDRESS, MacAddress.from_string(self.port_id)))

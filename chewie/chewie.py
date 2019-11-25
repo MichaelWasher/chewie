@@ -49,9 +49,6 @@ class Chewie:
         if chewie_id:
             self.chewie_id = chewie_id
 
-        self.port_to_eapol_id = {}  # port_id: last ID used in preemptive identity request.
-        # TODO for port_to_eapol_id - may want to set ID to null (-1...) if sent from the
-        #  state machine.
         self._managed_ports = {}
         self.eap_output_messages = Queue()
         self.radius_output_messages = Queue()
@@ -257,8 +254,8 @@ class Chewie:
         state_machine = self.get_state_machine(eap.src_mac, dst_mac, message_id)
 
         # Check for response to preemptive_eap
-        preemptive_eap_message_id = self.port_to_eapol_id.get(str(dst_mac), -2)
-        if message_id != -1 and message_id == preemptive_eap_message_id:
+        preemptive_eap_message_id = self._get_managed_port(dst_mac).current_preemptive_eapol_id
+        if message_id and message_id != -1 and message_id == preemptive_eap_message_id:
             self.logger.debug('eap packet is response to chewie initiated authentication')
             event = EventPreemptiveEAPResponseMessageReceived(eap, dst_mac,
                                                               preemptive_eap_message_id)
