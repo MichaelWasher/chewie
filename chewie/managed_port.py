@@ -76,18 +76,28 @@ class ManagedPort:
         If there is no active (in progress, or in state success(2)) supplicant send out the
         preemptive identity request message.
         """
+        self.identity_job = self.timer_scheduler.call_later(
+            self.DEFAULT_PREEMPTIVE_IDENTITY_REQUEST_INTERVAL,
+            self.send_preemptive_identity_request)
+
         if not self.port_status:
             self.logger.debug(
                 'cant send output on port %s is down', self.port_id)
             return
 
-        self.logger.debug("Sending Identity Request on port %s", self.port_id)
-        # schedule next request.
-        self.identity_job = self.timer_scheduler.call_later(
-            self.DEFAULT_PREEMPTIVE_IDENTITY_REQUEST_INTERVAL,
-            self.send_preemptive_identity_request)
+        for sm in self.state_machines.values():
+            self.logger.debug('Port has state machine: %s', self.port_id)
+            self.logger.debug('SM IS IN PROGRESS: %s', str(sm.is_in_progress()))
+            self.logger.debug('SM IS SUCCESS: %s', str(sm.is_in_progress()))
 
-        self._send_identity_request()
+            self.logger.debug('SM IS State: %s', str(sm.state))
+            if sm.is_in_progress() or sm.is_success():
+                self.logger.debug('port is active not sending on port %s', self.port_id)
+                break
+        else:
+            self.logger.debug("Sending Identity Request on port %s", self.port_id)
+            # schedule next request.
+            self._send_identity_request()
 
     def _send_identity_request(self):
         """
@@ -122,7 +132,7 @@ class ManagedPort:
         if state_machine and state_machine.is_success():
             self.logger.info(
                 'reauthenticating src_mac: %s on port: %s', src_mac, self.port_id)
-            self.start_identity_requests()
+            self._send_identity_request()
 
         elif state_machine is None:
             self.logger.debug('not reauthing. state machine on port: %s, mac: %s is none',
